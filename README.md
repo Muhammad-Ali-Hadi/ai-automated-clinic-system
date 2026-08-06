@@ -307,14 +307,13 @@ Many hospitals still face challenges such as:
 * Node.js
 * Express.js
 * MongoDB
-* Redis
 * Socket.IO
 
 ---
 
 ## AI
 
-* OpenAI GPT
+* Groq
 * Whisper
 * Embeddings
 * Retrieval-Augmented Generation (RAG)
@@ -330,8 +329,8 @@ Many hospitals still face challenges such as:
 
 ## Deployment
 
-* Docker
-* Nginx
+* Render
+* Vercel
 * GitHub Actions
 * Cloud Hosting
 
