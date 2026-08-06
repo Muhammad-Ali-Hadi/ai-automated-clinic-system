@@ -1,6 +1,6 @@
 # ai-automated-clinic-system
 
-# 🏥 Renovia Hospital OS
+# 🏥 Rizocare Clinic OS
 
 > **AI-Powered Hospital Management System**
 
