@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { authenticate, authorize, requireTenant } from '../middlewares/auth.js';
+import { validate } from '../middlewares/validate.js';
+import { configurePayroll, listPayroll } from '../controllers/payroll.controller.js';
+export const payrollRouter = Router();
+payrollRouter.use(authenticate, requireTenant);
+const envelope = z.object({ params: z.object({}), body: z.object({}), query: z.object({}) });
+const admin = authorize('HOSPITAL_ADMIN');
+payrollRouter.post('/', admin, validate(envelope.extend({ body: z.object({ providerName: z.string().min(2).max(200), status: z.string().min(2).max(50).optional(), configuration: z.record(z.unknown()).optional() }) })), configurePayroll);
+payrollRouter.get('/', admin, validate(envelope), listPayroll);
