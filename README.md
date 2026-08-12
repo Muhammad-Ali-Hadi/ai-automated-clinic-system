@@ -1,3 +1,5 @@
+# AI Automated Clinic System
+
 # 🏥 Rizocare Clinic OS
 
 > **AI-Powered Hospital Management System**
