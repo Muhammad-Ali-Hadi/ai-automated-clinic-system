@@ -19,6 +19,14 @@ vi.mock('../lib/prisma.js', () => ({
   },
 }));
 
+// These are unit tests for the fail-closed branch. Keep them deterministic when
+// the developer environment has real S3 credentials: integration/runtime tests
+// exercise the configured provider separately.
+vi.mock('../config/env.js', async () => {
+  const actual = await vi.importActual<typeof import('../config/env.js')>('../config/env.js');
+  return { ...actual, isStorageConfigured: false };
+});
+
 describe('File Management Service', () => {
   const mockAuth = {
     userId: 'user-1',
@@ -28,20 +36,17 @@ describe('File Management Service', () => {
 
   beforeEach(() => vi.clearAllMocks());
 
-  it('stages a file upload and returns a pre-signed URL', async () => {
+  it('fails closed when object storage is not configured', async () => {
     vi.mocked(prisma.fileObject.create).mockResolvedValue({
       id: 'file-1',
       storageKey: 'hospitals/hospital-uuid-abc/files/test.pdf',
     } as any);
 
-    const result = await fileService.stageUpload(mockAuth, {
+    await expect(fileService.stageUpload(mockAuth, {
       originalName: 'report.pdf',
       mimeType: 'application/pdf',
       sizeBytes: 1024 * 1024,
-    });
-
-    expect(result.fileId).toBe('file-1');
-    expect(result.uploadUrl).toBeTruthy();
+    })).rejects.toThrow(new AppError('Object storage is not configured.', 503));
   });
 
   it('rejects disallowed file types', async () => {
@@ -71,7 +76,21 @@ describe('File Management Service', () => {
     );
   });
 
-  it('generates a signed download URL', async () => {
+  it('normalizes BigInt file sizes for API serialization', async () => {
+    vi.mocked(prisma.fileObject.findFirst).mockResolvedValue({
+      id: 'file-1',
+      storageKey: 'hospitals/hospital-uuid-abc/files/test.pdf',
+      originalName: 'test.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: BigInt(1024),
+    } as any);
+
+    const file = await fileService.getFile(mockAuth, 'file-1');
+    expect(file.sizeBytes).toBe(1024);
+    expect(typeof file.sizeBytes).toBe('number');
+  });
+
+  it('fails closed when generating a signed URL without object storage', async () => {
     vi.mocked(prisma.fileObject.findFirst).mockResolvedValue({
       id: 'file-1',
       storageKey: 'hospitals/hospital-uuid-abc/files/test.pdf',
@@ -79,8 +98,8 @@ describe('File Management Service', () => {
       mimeType: 'application/pdf',
     } as any);
 
-    const result = await fileService.getSignedUrl(mockAuth, 'file-1');
-    expect(result.url).toBeTruthy();
-    expect(result.originalName).toBe('test.pdf');
+    await expect(fileService.getSignedUrl(mockAuth, 'file-1')).rejects.toThrow(
+      new AppError('Object storage is not configured.', 503)
+    );
   });
 });

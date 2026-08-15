@@ -6,6 +6,8 @@ import { AppError } from '../utils/app-error.js';
 import { hashToken } from '../utils/crypto.js';
 import { userRepository } from '../repositories/user.repository.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from './token.service.js';
+import { mailer } from '../lib/mailer.js';
+import { logger } from '../lib/logger.js';
 
 type LoginInput = { email: string; password: string; userAgent?: string; ipAddress?: string };
 const claims = (user: { id: string; hospitalId: string | null; role: Role }, sessionId: string) => ({ sub: user.id, hospitalId: user.hospitalId, role: user.role, sessionId });
@@ -20,8 +22,14 @@ export const authService = {
     const user = await userRepository.findByEmail(input.email.toLowerCase());
     const valid = !!user && user.isActive && await bcrypt.compare(input.password, user.passwordHash);
     await userRepository.loginEvent({ userId: valid ? user!.id : undefined, email: input.email.toLowerCase(), success: valid, ipAddress: input.ipAddress });
-    if (!valid) throw new AppError('Invalid email or password.', 401);
-    return { ...(await createTokens(user!, { userAgent: input.userAgent, ipAddress: input.ipAddress })), user: { id: user!.id, email: user!.email, role: user!.role, hospitalId: user!.hospitalId } };
+    const { auditService: audit } = await import('./audit.service.js');
+    if (!valid) {
+      if (user) await audit.record({ userId: user.id, hospitalId: user.hospitalId }, 'LOGIN_FAILED', 'User', user.id, { ipAddress: input.ipAddress });
+      throw new AppError('Invalid email or password.', 401);
+    }
+    const tokens = await createTokens(user!, { userAgent: input.userAgent, ipAddress: input.ipAddress });
+    await audit.record({ userId: user!.id, hospitalId: user!.hospitalId }, 'LOGIN', 'User', user!.id, { ipAddress: input.ipAddress });
+    return { ...tokens, user: { id: user!.id, email: user!.email, role: user!.role, hospitalId: user!.hospitalId } };
   },
   async refresh(refreshToken: string) {
     const tokenClaims = verifyRefreshToken(refreshToken);
@@ -30,13 +38,16 @@ export const authService = {
     const user = await userRepository.findById(tokenClaims.sub);
     if (!user || !user.isActive) throw new AppError('Invalid refresh token.', 401);
     await userRepository.revokeSession(session.id);
-    return createTokens(user);
+    const tokens = await createTokens(user);
+    const { auditService: audit } = await import('./audit.service.js');
+    await audit.record({ userId: user.id, hospitalId: user.hospitalId }, 'REFRESH', 'Session', session.id);
+    return tokens;
   },
   async profile(userId: string) { const user = await userRepository.findById(userId); if (!user) throw new AppError('User not found.', 404); return { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, hospitalId: user.hospitalId, createdAt: user.createdAt }; },
   async updateProfile(userId: string, input: { firstName?: string; lastName?: string }) { const user = await userRepository.updateProfile(userId, input); return { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, hospitalId: user.hospitalId }; },
-  async changePassword(userId: string, currentPassword: string, nextPassword: string) { const user = await userRepository.findById(userId); if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) throw new AppError('Current password is invalid.', 400); await userRepository.updatePassword(userId, await bcrypt.hash(nextPassword, 12)); await userRepository.revokeAll(userId); },
-  async logout(sessionId: string) { await userRepository.revokeSession(sessionId); },
-  async logoutAll(userId: string) { await userRepository.revokeAll(userId); },
+  async changePassword(userId: string, currentPassword: string, nextPassword: string) { const user = await userRepository.findById(userId); if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) throw new AppError('Current password is invalid.', 400); await userRepository.updatePassword(userId, await bcrypt.hash(nextPassword, 12)); await userRepository.revokeAll(userId); const { auditService: audit } = await import('./audit.service.js'); await audit.record({ userId: user.id, hospitalId: user.hospitalId }, 'PASSWORD_CHANGE', 'User', user.id); },
+  async logout(auth: { userId: string; hospitalId: string | null }, sessionId: string) { await userRepository.revokeSession(sessionId); const { auditService: audit } = await import('./audit.service.js'); await audit.record(auth, 'LOGOUT', 'Session', sessionId); },
+  async logoutAll(auth: { userId: string; hospitalId: string | null }) { await userRepository.revokeAll(auth.userId); const { auditService: audit } = await import('./audit.service.js'); await audit.record(auth, 'LOGOUT_ALL', 'User', auth.userId); },
   async sessions(userId: string, query: { page?: number; limit?: number }) {
     const page = query.page ?? 1; const limit = query.limit ?? 20;
     const [data, total] = await Promise.all([
@@ -110,11 +121,14 @@ export const authService = {
     const user = await userRepository.findByEmail(normalised);
     if (user && user.isActive) {
       const token = crypto.randomBytes(32).toString('hex');
+      if (!mailer.isConfigured()) {
+        logger.warn({ userId: user.id }, 'Password reset requested while email delivery is unavailable');
+        return { message: 'If an account with that email exists, a password reset link has been sent.' };
+      }
+      await mailer.send(user.email, 'Reset your Renovia password', `Use this password reset token within 24 hours: ${token}`);
       await userRepository.createPasswordResetToken({ userId: user.id, tokenHash: hashToken(token), expiresAt: addDays(new Date(), 1) });
       const { auditService: audit } = await import('./audit.service.js');
       await audit.record({ userId: user.id, hospitalId: user.hospitalId }, 'PASSWORD_RESET_REQUEST', 'User', user.id, { ipAddress });
-      const { logger } = await import('../lib/logger.js');
-      logger.info({ email: normalised, resetToken: token }, 'Password reset token generated (email dispatch not configured)');
     }
     return { message: 'If an account with that email exists, a password reset link has been sent.' };
   },
@@ -135,10 +149,10 @@ export const authService = {
     const user = await userRepository.findById(userId);
     if (!user) throw new AppError('User not found.', 404);
     if (user.emailVerifiedAt) throw new AppError('Email is already verified.', 400);
+    if (!mailer.isConfigured()) throw new AppError('Email delivery is not configured.', 503);
     const token = crypto.randomBytes(32).toString('hex');
+    await mailer.send(user.email, 'Verify your Renovia email address', `Use this verification token within 7 days: ${token}`);
     await userRepository.createVerificationToken({ userId, tokenHash: hashToken(token), expiresAt: addDays(new Date(), 7) });
-    const { logger } = await import('../lib/logger.js');
-    logger.info({ userId, verificationToken: token }, 'Email verification token generated (email dispatch not configured)');
     return { message: 'Verification email sent.' };
   },
 
@@ -167,4 +181,3 @@ export const authService = {
     return { roles: ['SUPER_ADMIN', 'HOSPITAL_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'PHARMACIST', 'LABORATORY_TECHNICIAN', 'ACCOUNTANT', 'PATIENT'] };
   }
 };
-

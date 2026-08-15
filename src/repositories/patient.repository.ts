@@ -21,7 +21,7 @@ export const patientRepository = {
       where: {
         hospitalId,
         deletedAt: null,
-        ...(status ? { status: status as never } : {}),
+        status: (status ?? 'ACTIVE') as never,
         ...(search
           ? {
               OR: [
@@ -44,7 +44,7 @@ export const patientRepository = {
       where: {
         hospitalId,
         deletedAt: null,
-        ...(status ? { status: status as never } : {}),
+        status: (status ?? 'ACTIVE') as never,
         ...(search
           ? {
               OR: [
@@ -115,7 +115,7 @@ export const patientRepository = {
         data: { status: 'MERGED', archivedAt: new Date() },
       });
       return tx.patient.findUnique({ where: { id: targetId } });
-    }),
+    }, { maxWait: 10_000, timeout: 30_000 }),
 
   // Vitals
   addVital: (data: {

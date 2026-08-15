@@ -3,6 +3,8 @@ import { auditService, type TenantAuth } from './audit.service.js';
 import { labTestRepository } from '../repositories/lab-test.repository.js';
 import { patientRepository } from '../repositories/patient.repository.js';
 import type { LabRequestStatus } from '@prisma/client';
+import { fileService } from './file.service.js';
+import { prisma } from '../lib/prisma.js';
 
 const hid = (auth: TenantAuth) => {
   if (!auth.hospitalId) throw new AppError('Tenant context required.', 403);
@@ -116,6 +118,7 @@ export const labTestService = {
       referenceRange: input.referenceRange ?? test.referenceRange ?? undefined,
       approvedAt: undefined,
     });
+    await prisma.labResultHistory.create({ data: { hospitalId: hid(auth), labTestId: id, recordedById: auth.userId, result: input.result, referenceRange: input.referenceRange ?? test.referenceRange ?? undefined } });
     await auditService.record(auth, 'RECORD_RESULT', 'LabTest', id);
     return this.getRequest(auth, id);
   },
@@ -154,9 +157,15 @@ export const labTestService = {
     if (test.status !== 'COMPLETED') {
       throw new AppError('Report can only be generated for COMPLETED laboratory tests.', 400);
     }
-    // Simulate generation of a secure report URL
+    const report = Buffer.from(`Renovia Laboratory Report\nTest: ${test.testName}\nResult: ${test.result ?? ''}\nReference range: ${test.referenceRange ?? ''}\nApproved: ${test.approvedAt?.toISOString() ?? 'pending'}\n`, 'utf8');
+    const staged = await fileService.stageUpload(auth, { originalName: `lab-${id}.pdf`, mimeType: 'application/pdf', sizeBytes: report.byteLength, labTestId: id, category: 'LAB_REPORT' });
+    const upload = await fetch(staged.uploadUrl, { method: 'PUT', headers: { 'content-type': 'application/pdf' }, body: report });
+    if (!upload.ok) throw new AppError('Laboratory report storage failed.', 502);
+    const signed = await fileService.getSignedUrl(auth, staged.fileId);
+    await auditService.record(auth, 'GENERATE_REPORT', 'LabTest', id, { fileId: staged.fileId });
     return {
-      reportUrl: `https://storage.renovia.local/hospitals/${hid(auth)}/reports/lab-${id}.pdf`,
+      reportUrl: signed.url,
+      fileId: staged.fileId,
       generatedAt: new Date(),
     };
   },

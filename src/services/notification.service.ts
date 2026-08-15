@@ -11,8 +11,8 @@ const hid = (auth: TenantAuth) => {
 
 /**
  * Provider dispatch — clean interface. Actual delivery requires provider
- * env vars (e.g. SENDGRID_API_KEY, TWILIO_ACCOUNT_SID, FCM_SERVER_KEY).
- * When env vars are absent, delivery is SIMULATED and logged.
+ * Email is delivered by the worker; SMS, WhatsApp and Push remain explicitly
+ * unavailable until real provider adapters are configured.
  */
 const dispatchViaProvider = async (
   channel: NotificationChannel,
@@ -21,17 +21,13 @@ const dispatchViaProvider = async (
 ): Promise<void> => {
   switch (channel) {
     case 'EMAIL':
-      // TODO: inject SMTP / SendGrid provider when SMTP_HOST / SENDGRID_API_KEY is set
-      break;
+      throw new AppError('Email delivery is handled by the PostgreSQL worker.', 500);
     case 'SMS':
-      // TODO: inject Twilio provider when TWILIO_ACCOUNT_SID is set
-      break;
+      throw new AppError('SMS delivery is not configured.', 503);
     case 'WHATSAPP':
-      // TODO: inject WhatsApp Business provider when WHATSAPP_API_KEY is set
-      break;
+      throw new AppError('WhatsApp delivery is not configured.', 503);
     case 'PUSH':
-      // TODO: inject FCM / APNs provider when FCM_SERVER_KEY is set
-      break;
+      throw new AppError('Push delivery is not configured.', 503);
   }
 };
 
@@ -120,12 +116,16 @@ export const notificationService = {
 
   async markRead(auth: TenantAuth, id: string) {
     await this.getNotification(auth, id);
-    return notificationRepository.markRead(id, hid(auth));
+    const result = await notificationRepository.markRead(id, hid(auth));
+    await auditService.record(auth, 'MARK_READ', 'Notification', id);
+    return result;
   },
 
   async markUnread(auth: TenantAuth, id: string) {
     await this.getNotification(auth, id);
-    return notificationRepository.markUnread(id, hid(auth));
+    const result = await notificationRepository.markUnread(id, hid(auth));
+    await auditService.record(auth, 'MARK_UNREAD', 'Notification', id);
+    return result;
   },
 
   // ---- Templates ----

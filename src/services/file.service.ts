@@ -3,6 +3,7 @@ import { auditService, type TenantAuth } from './audit.service.js';
 import crypto from 'node:crypto';
 import { prisma } from '../lib/prisma.js';
 import { presignS3Url } from '../lib/s3.js';
+import { env, isStorageConfigured } from '../config/env.js';
 
 const hid = (auth: TenantAuth) => {
   if (!auth.hospitalId) throw new AppError('Tenant context required.', 403);
@@ -27,20 +28,17 @@ const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
  *   S3_BUCKET, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
  *   or compatible STORAGE_ENDPOINT (e.g. Supabase Storage, MinIO).
  *
- * When credentials are absent, placeholder URLs are returned.
+ * File operations require configured storage; this service never returns fake URLs.
  */
 const buildConfig = () => {
-  const bucket = process.env['S3_BUCKET'];
-  const accessKeyId = process.env['AWS_ACCESS_KEY_ID'];
-  const secretAccessKey = process.env['AWS_SECRET_ACCESS_KEY'];
-  if (!bucket || !accessKeyId || !secretAccessKey) return null;
+  if (!isStorageConfigured) return null;
   const cfg = {
-    bucket,
-    accessKeyId,
-    secretAccessKey,
-    region: process.env['S3_REGION'] ?? 'us-east-1',
+    bucket: env.S3_BUCKET!,
+    accessKeyId: env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY!,
+    region: env.S3_REGION,
   } as const;
-  const endpoint = process.env['S3_ENDPOINT'];
+  const endpoint = env.S3_ENDPOINT;
   return endpoint ? { ...cfg, endpoint } : cfg;
 };
 
@@ -49,14 +47,22 @@ const storageProvider = {
 
   generateUploadUrl: (storageKey: string, contentType?: string): string => {
     const cfg = buildConfig();
-    if (cfg) return presignS3Url(cfg, 'PUT', storageKey, contentType);
-    return `https://storage.renovia.local/${storageKey}?upload=1&configured=false`;
+    if (!cfg) throw new AppError('Object storage is not configured.', 503);
+    return presignS3Url(cfg, 'PUT', storageKey, contentType);
   },
 
   generateDownloadUrl: (storageKey: string): string => {
     const cfg = buildConfig();
-    if (cfg) return presignS3Url(cfg, 'GET', storageKey);
-    return `https://storage.renovia.local/${storageKey}?download=1&configured=false`;
+    if (!cfg) throw new AppError('Object storage is not configured.', 503);
+    return presignS3Url(cfg, 'GET', storageKey);
+  },
+  async deleteObject(storageKey: string): Promise<void> {
+    const cfg = buildConfig();
+    if (!cfg) throw new AppError('Object storage is not configured.', 503);
+    const response = await fetch(presignS3Url(cfg, 'DELETE', storageKey), { method: 'DELETE' });
+    if (!response.ok && response.status !== 404) {
+      throw new AppError('Object storage deletion failed.', 502);
+    }
   },
 };
 
@@ -89,6 +95,11 @@ export const fileService = {
 
     if (input.sizeBytes > MAX_SIZE_BYTES) {
       throw new AppError(`File size exceeds the 20 MB limit.`, 400);
+    }
+    if (!storageProvider.isConfigured()) throw new AppError('Object storage is not configured.', 503);
+    if (input.patientId) {
+      const patient = await prisma.patient.findFirst({ where: { id: input.patientId, hospitalId, deletedAt: null }, select: { id: true } });
+      if (!patient) throw new AppError('Patient not found.', 404);
     }
 
     const ext = input.originalName.split('.').pop() ?? 'bin';
@@ -124,7 +135,7 @@ export const fileService = {
       where: { id, hospitalId: hid(auth) },
     });
     if (!file) throw new AppError('File not found.', 404);
-    return file;
+    return { ...file, sizeBytes: Number(file.sizeBytes) };
   },
 
   async getSignedUrl(auth: TenantAuth, id: string) {
@@ -188,9 +199,9 @@ export const fileService = {
   },
 
   async deleteFile(auth: TenantAuth, id: string) {
-    await this.getFile(auth, id);
-    // Soft archive: we retain DB record but note deletion.
-    // For hard delete, call provider.deleteObject(storageKey) when configured.
+    const file = await prisma.fileObject.findFirst({ where: { id, hospitalId: hid(auth) } });
+    if (!file) throw new AppError('File not found.', 404);
+    await storageProvider.deleteObject(file.storageKey);
     await prisma.fileObject.deleteMany({ where: { id, hospitalId: hid(auth) } });
     await auditService.record(auth, 'DELETE', 'FileObject', id);
   },

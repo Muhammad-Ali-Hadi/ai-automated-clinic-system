@@ -3,6 +3,7 @@ import { auditService, type TenantAuth } from './audit.service.js';
 import { invoiceRepository } from '../repositories/invoice.repository.js';
 import { patientRepository } from '../repositories/patient.repository.js';
 import { prisma } from '../lib/prisma.js';
+import crypto from 'node:crypto';
 
 const hid = (auth: TenantAuth) => {
   if (!auth.hospitalId) throw new AppError('Tenant context required.', 403);
@@ -86,10 +87,7 @@ export const invoiceService = {
       prisma.payment.findMany({ where: { hospitalId, invoiceId: id }, orderBy: { createdAt: 'asc' } }),
     ]);
 
-    // Insurance claims still in JSON config (not migrated yet)
-    const settings = await this.getSettings(hospitalId);
-    const config = (settings.configuration as any) || {};
-    const claim = (config.insuranceClaims || {})[id] || null;
+    const claim = await prisma.insuranceClaim.findFirst({ where: { hospitalId, invoiceId: id } });
 
     return {
       ...invoice,
@@ -175,33 +173,17 @@ export const invoiceService = {
     const hospitalId = hid(auth);
     const invoiceDetails = await this.getInvoice(auth, id);
 
-    const paidTotal = invoiceDetails.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-    if (amount <= 0 || amount > paidTotal) {
-      throw new AppError(`Invalid refund amount. Maximum refundable is ${paidTotal}.`, 400);
-    }
-
-    await invoiceRepository.updateStatus(hospitalId, id, 'REFUNDED');
-
-    // Record refund transaction in configuration
-    const settings = await this.getSettings(hospitalId);
-    const config = (settings.configuration as any) || {};
-    const invoiceRefunds = config.invoiceRefunds || {};
-    const refunds = invoiceRefunds[id] || [];
-
-    const newRefund = {
-      id: crypto.randomUUID(),
-      amount,
-      refundedAt: new Date(),
-    };
-    refunds.push(newRefund);
-    invoiceRefunds[id] = refunds;
-
-    await prisma.hospitalSettings.update({
-      where: { hospitalId },
-      data: { configuration: { ...config, invoiceRefunds } },
+    const paidTotal = invoiceDetails.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+    const refundedTotal = (await prisma.refund.aggregate({ where: { hospitalId, invoiceId: id, status: 'COMPLETED' }, _sum: { amount: true } }))._sum.amount ?? 0;
+    const refundable = paidTotal - Number(refundedTotal);
+    if (amount <= 0 || amount > refundable) throw new AppError(`Invalid refund amount. Maximum refundable is ${refundable}.`, 400);
+    const result = await prisma.$transaction(async (tx) => {
+      const refund = await tx.refund.create({ data: { hospitalId, invoiceId: id, amount, refundedById: auth.userId } });
+      const nextStatus = amount === refundable ? 'REFUNDED' : 'PAID';
+      await tx.invoice.update({ where: { id }, data: { status: nextStatus } });
+      return refund;
     });
-
-    await auditService.record(auth, 'REFUND', 'Invoice', id, { refundId: newRefund.id });
+    await auditService.record(auth, 'REFUND', 'Invoice', id, { refundId: result.id });
     return this.getInvoice(auth, id);
   },
 
@@ -212,50 +194,21 @@ export const invoiceService = {
   ) {
     const hospitalId = hid(auth);
     const invoiceDetails = await this.getInvoice(auth, id);
-
-    const settings = await this.getSettings(hospitalId);
-    const config = (settings.configuration as any) || {};
-    const insuranceClaims = config.insuranceClaims || {};
-
-    const claim = {
-      id: crypto.randomUUID(),
-      provider: input.provider,
-      policyNumber: input.policyNumber,
-      amountClaimed: input.amountClaimed,
-      status: 'SUBMITTED',
-      createdAt: new Date(),
-    };
-    insuranceClaims[id] = claim;
-
-    await prisma.hospitalSettings.update({
-      where: { hospitalId },
-      data: { configuration: { ...config, insuranceClaims } },
-    });
-
-    await auditService.record(auth, 'CREATE_CLAIM', 'Invoice', id, { claimId: claim.id });
+    const existing = await prisma.insuranceClaim.findFirst({ where: { hospitalId, invoiceId: id, status: { in: ['PENDING', 'APPROVED'] } } });
+    if (existing) throw new AppError('An active insurance claim already exists for this invoice.', 409);
+    const claim = await prisma.insuranceClaim.create({ data: { hospitalId, patientId: invoiceDetails.patientId, invoiceId: id, claimNumber: `CLM-${crypto.randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()}`, providerName: input.provider, amount: input.amountClaimed } });
+    await auditService.record(auth, 'CREATE_CLAIM', 'InsuranceClaim', claim.id);
     return claim;
   },
 
   async updateClaimStatus(auth: TenantAuth, id: string, status: string) {
     const hospitalId = hid(auth);
-    const settings = await this.getSettings(hospitalId);
-    const config = (settings.configuration as any) || {};
-    const insuranceClaims = config.insuranceClaims || {};
-
-    const claim = insuranceClaims[id];
+    if (!['PENDING', 'APPROVED', 'REJECTED', 'PAID'].includes(status)) throw new AppError('Invalid insurance claim status.', 400);
+    const claim = await prisma.insuranceClaim.findFirst({ where: { hospitalId, OR: [{ id }, { invoiceId: id }] } });
     if (!claim) throw new AppError('Insurance claim not found.', 404);
-
-    claim.status = status;
-    claim.updatedAt = new Date();
-    insuranceClaims[id] = claim;
-
-    await prisma.hospitalSettings.update({
-      where: { hospitalId },
-      data: { configuration: { ...config, insuranceClaims } },
-    });
-
-    await auditService.record(auth, 'UPDATE_CLAIM_STATUS', 'Invoice', id, { status });
-    return claim;
+    const updated = await prisma.insuranceClaim.update({ where: { id: claim.id }, data: { status: status as any, ...(status === 'APPROVED' ? { approvedAt: new Date(), approvedById: auth.userId } : {}), ...(status === 'REJECTED' ? { rejectedAt: new Date() } : {}) } });
+    await auditService.record(auth, 'UPDATE_CLAIM_STATUS', 'InsuranceClaim', claim.id, { status });
+    return updated;
   },
 
   async listInvoices(

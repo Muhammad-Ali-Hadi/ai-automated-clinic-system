@@ -155,39 +155,17 @@ export const medicineService = {
     return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   },
 
-  // --- Supplier & Purchase Order JSON Registries in HospitalSettings ---
-  async getSettings(hospitalId: string) {
-    let settings = await prisma.hospitalSettings.findUnique({ where: { hospitalId } });
-    if (!settings) {
-      settings = await prisma.hospitalSettings.create({
-        data: { hospitalId, preferences: {}, configuration: {} },
-      });
-    }
-    return settings;
-  },
-
   async listSuppliers(auth: TenantAuth) {
-    const settings = await this.getSettings(hid(auth));
-    const config = (settings.configuration as any) || {};
-    return config.suppliers || [];
+    return prisma.supplier.findMany({ where: { hospitalId: hid(auth), isActive: true }, orderBy: { name: 'asc' } });
   },
 
   async createSupplier(auth: TenantAuth, input: { name: string; contactInfo: string }) {
     const hospitalId = hid(auth);
-    const settings = await this.getSettings(hospitalId);
-    const config = (settings.configuration as any) || {};
-    const suppliers = config.suppliers || [];
-
-    const newSupplier = { id: crypto.randomUUID(), ...input, createdAt: new Date() };
-    suppliers.push(newSupplier);
-
-    await prisma.hospitalSettings.update({
-      where: { hospitalId },
-      data: { configuration: { ...config, suppliers } },
-    });
-
-    await auditService.record(auth, 'CREATE', 'Supplier', newSupplier.id);
-    return newSupplier;
+    const existing = await prisma.supplier.findFirst({ where: { hospitalId, name: input.name } });
+    if (existing) throw new AppError('Supplier already exists in this hospital.', 409);
+    const supplier = await prisma.supplier.create({ data: { hospitalId, name: input.name, contactName: input.contactInfo } });
+    await auditService.record(auth, 'CREATE', 'Supplier', supplier.id);
+    return supplier;
   },
 
   async createPurchaseOrder(
@@ -196,14 +174,16 @@ export const medicineService = {
   ) {
     const hospitalId = hid(auth);
 
-    // Verify medicine exists and belongs to this hospital
     const medicine = await this.getMedicine(auth, input.medicineId);
+    const supplier = await prisma.supplier.findFirst({ where: { id: input.supplierId, hospitalId, isActive: true } });
+    if (!supplier) throw new AppError('Supplier not found.', 404);
 
     const po = await prisma.purchaseOrder.create({
       data: {
         hospitalId,
         medicineId: input.medicineId,
-        supplierName: input.supplierId, // supplierId used as name for backward compat
+        supplierId: supplier.id,
+        supplierName: supplier.name,
         quantity: input.quantity,
         unitCost: input.unitCost ?? 0,
         status: 'PENDING',

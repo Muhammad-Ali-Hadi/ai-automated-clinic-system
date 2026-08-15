@@ -6,7 +6,7 @@
 
 Production-oriented, multi-tenant **modular monolith** for hospital operations.
 
-- **Runtime:** Node.js 24 + **TypeScript** + **Express 5**
+- **Runtime:** Node.js 20+ + **TypeScript** + **Express 5**
 - **Database:** **Supabase-hosted PostgreSQL** accessed through **Prisma 6**
 - **Auth:** Application-issued **JWT** (access + hashed/rotated refresh tokens, sessions)
 - **Validation:** **Zod** (request `body`/`query`/`params` validated before business logic)
@@ -14,9 +14,9 @@ Production-oriented, multi-tenant **modular monolith** for hospital operations.
 - **Jobs:** dedicated **PostgreSQL-backed worker** using `FOR UPDATE SKIP LOCKED`
 - **Object storage:** **S3-compatible** (AWS S3 / Supabase Storage S3 / MinIO / R2) via a
   dependency-free **AWS SigV4** pre-signer
-- **Email:** SMTP (Nodemailer); environment-gated with a flagged log fallback
+- **Email:** SMTP (Nodemailer); environment-gated, with no token/log fallback
 - **Docs:** OpenAPI / Swagger UI
-- **Testing:** Vitest (unit + integration against the live DB)
+- **Testing:** Vitest (unit, HTTP/runtime, security, worker, and storage tests)
 
 Constraint: this service deliberately uses **no Redis, BullMQ, Mongo, Mongoose, Docker,
 local PostgreSQL, Supabase Auth, Supabase Realtime, or Supabase Storage-as-API.** Tenant
@@ -27,8 +27,9 @@ context and sessions are the app's own; storage is S3; realtime is Socket.IO; jo
 ## 1. Quick start
 
 ```bash
-# 1) env
-cp .env.example .env          # then fill in real values (never commit .env)
+# 1) configuration
+# Copy .env.example to .env if your local environment uses an env-file loader,
+# then fill in real values. Never commit .env.
 
 # 2) install + generate client
 npm install
@@ -58,6 +59,9 @@ Health: `GET /health` · Readiness (real DB): `GET /ready`
 | `start` | `node dist/server.js` |
 | `worker` | `tsx src/jobs/worker.ts` |
 | `test` | `vitest run` |
+| `test:coverage` | `vitest run --coverage` |
+| `typecheck` | TypeScript type-check without emitting files |
+| `prisma:validate` | Validate the Prisma schema |
 | `prisma:migrate` | `prisma migrate dev` |
 | `prisma:generate` | `prisma generate` |
 
@@ -65,8 +69,9 @@ Health: `GET /health` · Readiness (real DB): `GET /ready`
 
 ## 2. Configuration (`.env`)
 
-`.env.example` documents every variable. `src/config/env.ts` **validates all of them at
-boot with Zod** and fails fast on invalid/missing values.
+`.env.example` documents every variable. `src/config/env.ts` reads process environment only,
+**validates all values at boot with Zod**, and fails fast on invalid/missing values. Load local
+values through your shell, IDE, or a Node env-file loader; application code never reads `.env`.
 
 | Variable | Required | Notes |
 |---|---|---|
@@ -77,11 +82,13 @@ boot with Zod** and fails fast on invalid/missing values.
 | `JWT_ACCESS_EXPIRES_IN` | | default `15m` |
 | `JWT_REFRESH_EXPIRES_IN` | | default `30d` |
 | `PORT` | | default `4000` |
-| `CORS_ORIGIN` | | default `http://localhost:3000` |
+| `CORS_ORIGIN` | ✅ | Comma-separated browser allow-list |
 | `NODE_ENV` | | `development` / `test` / `production` |
 | `LOG_LEVEL` | | default `info` |
-| `SMTP_HOST` `SMTP_PORT` `SMTP_SECURE` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` | optional | Email. If unset, messages are written to the **log** (clearly flagged), not sent. |
-| `S3_BUCKET` `S3_REGION` `S3_ENDPOINT` `AWS_ACCESS_KEY_ID` `AWS_SECRET_ACCESS_KEY` | optional | Object storage. If unset, file endpoints return a flagged `configured=false` placeholder URL. |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_SECURE` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` | production required | SMTP credentials must be supplied together. Tokens are delivered by email and never logged. |
+| `S3_BUCKET` `S3_REGION` `S3_ENDPOINT` `AWS_ACCESS_KEY_ID` `AWS_SECRET_ACCESS_KEY` | optional, all-or-none | Object storage. File upload/download returns 503 until configured; no placeholder URLs are issued. |
+| `JOB_POLL_INTERVAL_MS` `JOB_LOCK_TIMEOUT_SECONDS` `JOB_MAX_BACKOFF_SECONDS` | | Portable worker polling, lease, and retry controls. |
+| `TRUST_PROXY_HOPS` | | `0` by default; set only for a known trusted proxy topology. |
 
 > **Security:** never commit `.env`. It is git-ignored. `.env.example` ships with
 > placeholders only — no real credentials.
@@ -139,11 +146,17 @@ Insufficient role → **403**; unauthenticated → **401**; cross-tenant → **4
 
 Refresh tokens are **stored hashed**; passwords are **bcrypt**-hashed; neither is ever logged.
 
+Email notifications use the SMTP adapter. SMS, WhatsApp, and Push notifications are persisted
+and queued but are not falsely marked delivered until real provider adapters and credentials are
+configured; unsupported channels fail through the worker retry/failed-job lifecycle.
+
 ---
 
 ## 5. API surface (module map)
 
-Base path: `/api/v1`. All endpoints are JWT-authenticated and tenant-scoped unless noted.
+Base path: `/api/v1`. Protected business endpoints are JWT-authenticated and tenant-scoped
+unless noted. Registration, login, refresh, password-recovery, and email-verification endpoints
+are public; `/health`, `/ready`, and `/api-docs` are operational/documentation endpoints.
 
 | Domain | Route group |
 |---|---|
@@ -196,22 +209,30 @@ files are referenced from S3 rather than embedded.
 `file.service` stages an upload (validates MIME type + 20 MB cap, persists a `FileObject`),
 then returns a **genuinely-signed** URL from `src/lib/s3.ts` — a dependency-free **AWS
 Signature Version 4** pre-signer that works with AWS S3, Supabase Storage (S3 mode), MinIO
-and Cloudflare R2. Downloads use signed `GET` URLs. Without S3 credentials the endpoints
-return a clearly-flagged `configured=false` placeholder.
+and Cloudflare R2. Downloads use signed `GET` URLs. Without complete S3 credentials, file
+upload/download endpoints fail safely with HTTP 503 and never return a synthetic URL.
 
 ---
 
 ## 9. Testing
 
 ```bash
-npm test            # vitest run — unit + integration against the (live) DB
+npm test            # vitest run
+npm run test:coverage
+npm run typecheck
+npm run build
 ```
 
-17 suites (`src/tests/`): `smoke`, `patient`, `appointment`, `doctor`, `ehr`,
-`discharge-summary`, `laboratory`, `pharmacy`, `billing`, `insurance`, `employee`,
-`shift`, `notification`, `notification-template`, `report`, `file`, `hospital`.
-These cover auth lifecycle, RBAC, tenant isolation, validation/error shapes, and the
-per-module workflows. **71 tests**, all passing at last verification.
+The `src/tests/` suite covers authentication lifecycle, RBAC, tenant isolation,
+validation/error shapes, OpenAPI completeness, HTTP runtime behavior, S3 signing,
+PostgreSQL worker behavior, and module workflows. Test files currently include:
+`app-runtime`, `appointment`, `billing`, `discharge-summary`, `doctor`, `ehr`, `employee`,
+`file`, `hospital`, `insurance`, `laboratory`, `notification-template`, `notification`,
+`openapi-completeness`, `patient`, `pharmacy`, `report`, `s3`, `security-hardening`,
+`shift`, `smoke`, and `worker-core`.
+
+Test counts can change as the suite evolves; run `npm test` for the current result and
+`npm run test:coverage` for the current coverage report.
 
 ---
 
@@ -241,3 +262,15 @@ per-module workflows. **71 tests**, all passing at last verification.
 - **Do not** hand-edit Prisma-managed tables via the Supabase Table Editor — use migrations.
 - Soft delete, `createdAt`/`updatedAt`, and `createdBy`/`updatedBy` audit fields are used
   where applicable; transactions wrap multi-record writes.
+
+---
+
+## 12. Repository notes
+
+- Commit `.env.example`, but never commit `.env` or other files containing credentials.
+- Build output, coverage, dependencies, logs, and local audit output are excluded by
+  `.gitignore`.
+- Run `npm run prisma:validate`, `npm run typecheck`, `npm run build`, and `npm test`
+  before opening a pull request.
+- This repository currently contains the backend service. Frontend or deployment-specific
+  documentation should be added alongside the relevant application or deployment files.

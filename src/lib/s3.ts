@@ -51,13 +51,14 @@ const toAmzDate = (d: Date): { amzDate: string; dateStamp: string } => {
   return { amzDate: iso, dateStamp: iso.slice(0, 8) };
 };
 
-const hostFromConfig = (cfg: S3Config): { host: string; baseUrl: string } => {
+const hostFromConfig = (cfg: S3Config): { host: string; basePath: string; baseUrl: string } => {
   if (cfg.endpoint) {
     const url = new URL(cfg.endpoint);
-    return { host: url.host, baseUrl: `${url.protocol}//${url.host}/${cfg.bucket}` };
+    const basePath = url.pathname.replace(/\/+$/, '');
+    return { host: url.host, basePath: `${basePath}/${cfg.bucket}`, baseUrl: url.origin };
   }
   const host = `${cfg.bucket}.s3.${cfg.region}.amazonaws.com`;
-  return { host, baseUrl: `https://${host}` };
+  return { host, basePath: '', baseUrl: `https://${host}` };
 };
 
 /**
@@ -70,12 +71,12 @@ export const presignS3Url = (
   storageKey: string,
   contentType?: string
 ): string => {
-  const { host, baseUrl } = hostFromConfig(cfg);
+  const { host, basePath, baseUrl } = hostFromConfig(cfg);
   const { amzDate, dateStamp } = toAmzDate(new Date());
   const scope = buildCredentialScope(dateStamp, cfg.region);
   const expires = Math.min(Math.max(cfg.expiresSeconds ?? 900, 1), 604800); // <= 7 days
 
-  const canonicalUri = `/${uriEncode(storageKey, false)}`;
+  const canonicalUri = `${basePath}/${uriEncode(storageKey, false)}`;
 
   const query: Record<string, string> = {
     'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',

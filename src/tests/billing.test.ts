@@ -44,6 +44,7 @@ vi.mock('../lib/prisma.js', () => ({
       findMany: vi.fn(),
       findUnique: vi.fn(),
     },
+    insuranceClaim: { findFirst: vi.fn().mockResolvedValue(null) },
     $transaction: vi.fn(async (arg) => {
       if (typeof arg === 'function') {
         const txClient = {

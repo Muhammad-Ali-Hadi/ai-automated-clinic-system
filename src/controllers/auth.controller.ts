@@ -26,12 +26,12 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 };
 
 export const logout = async (req: Request, res: Response): Promise<void> => {
-  await authService.logout(req.auth!.sessionId);
+  await authService.logout(req.auth!, req.auth!.sessionId);
   res.status(200).json({ success: true, message: 'Logged out.' });
 };
 
 export const logoutAll = async (req: Request, res: Response): Promise<void> => {
-  await authService.logoutAll(req.auth!.userId);
+  await authService.logoutAll(req.auth!);
   res.status(200).json({ success: true, message: 'All sessions revoked.' });
 };
 

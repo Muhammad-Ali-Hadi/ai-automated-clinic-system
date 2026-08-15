@@ -280,8 +280,9 @@ export const appointmentService = {
         );
     }
 
+    const { dates: _dates, ...recurringBase } = input;
     const result = await appointmentRepository.createRecurring(
-      { hospitalId, ...input },
+      { hospitalId, ...recurringBase },
       dates
     );
     await auditService.record(auth, 'CREATE_RECURRING', 'Appointment', undefined, {

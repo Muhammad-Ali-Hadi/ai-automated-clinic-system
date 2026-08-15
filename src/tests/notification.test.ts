@@ -3,6 +3,7 @@ import { notificationService } from '../services/notification.service.js';
 import { notificationRepository } from '../repositories/notification.repository.js';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../utils/app-error.js';
+import { auditService } from '../services/audit.service.js';
 
 vi.mock('../repositories/notification.repository.js', () => ({
   notificationRepository: {
@@ -68,6 +69,7 @@ describe('Notification Service', () => {
 
     const result = await notificationService.markRead(mockAuth, 'notif-1');
     expect(result?.readAt).toBeTruthy();
+    expect(auditService.record).toHaveBeenCalledWith(mockAuth, 'MARK_READ', 'Notification', 'notif-1');
   });
 
   it('throws if notification not found', async () => {
