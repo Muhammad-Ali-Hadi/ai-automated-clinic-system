@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { authenticate, authorize, requireTenant } from '../middlewares/auth.js';
+import { validate } from '../middlewares/validate.js';
+import { scheduleReminder, listReminders } from '../controllers/reminder.controller.js';
+export const reminderRouter = Router();
+reminderRouter.use(authenticate, requireTenant);
+const envelope = z.object({ params: z.object({}), body: z.object({}), query: z.object({}) });
+const staff = authorize('HOSPITAL_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT', 'PHARMACIST');
+reminderRouter.post('/', staff, validate(envelope.extend({ body: z.object({ type: z.enum(['APPOINTMENT', 'PAYMENT', 'PRESCRIPTION']), subject: z.string().min(1).max(200), body: z.string().min(1).max(5000), runAt: z.string().datetime({ offset: true }), userId: z.string().uuid().optional() }) })), scheduleReminder);
+reminderRouter.get('/', staff, validate(envelope.extend({ query: z.object({ page: z.coerce.number().int().positive().default(1), limit: z.coerce.number().int().min(1).max(100).default(20) }) })), listReminders);

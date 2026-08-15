@@ -1,0 +1,9 @@
+ALTER TABLE "LabTest" ADD COLUMN IF NOT EXISTS "barcode" TEXT;
+ALTER TABLE "LabTest" ADD COLUMN IF NOT EXISTS "rejectionReason" TEXT;
+ALTER TABLE "LabTest" ADD COLUMN IF NOT EXISTS "rejectedAt" TIMESTAMP(3);
+CREATE UNIQUE INDEX IF NOT EXISTS "LabTest_hospitalId_barcode_key" ON "LabTest"("hospitalId", "barcode");
+CREATE TABLE IF NOT EXISTS "DischargeSummary" ("id" UUID NOT NULL, "hospitalId" UUID NOT NULL, "patientId" UUID NOT NULL, "dischargedById" UUID NOT NULL, "diagnosis" TEXT, "summary" TEXT NOT NULL, "medications" TEXT, "followUpInstructions" TEXT, "dischargedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "DischargeSummary_pkey" PRIMARY KEY ("id"));
+CREATE INDEX IF NOT EXISTS "DischargeSummary_hospitalId_patientId_dischargedAt_idx" ON "DischargeSummary"("hospitalId", "patientId", "dischargedAt");
+DO $$ BEGIN ALTER TABLE "DischargeSummary" ADD CONSTRAINT "DischargeSummary_hospitalId_fkey" FOREIGN KEY ("hospitalId") REFERENCES "Hospital"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "DischargeSummary" ADD CONSTRAINT "DischargeSummary_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "Patient"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "DischargeSummary" ADD CONSTRAINT "DischargeSummary_dischargedById_fkey" FOREIGN KEY ("dischargedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
