@@ -25,6 +25,7 @@ import { insuranceRouter } from './insurance.routes.js';
 import { supplierRouter } from './supplier.routes.js';
 import { shiftRouter } from './shifts.routes.js';
 import { auditRouter } from './audit.routes.js';
+import { aiRouter } from './ai.routes.js';
 
 export const apiRouter = Router();
 apiRouter.use('/auth', authRouter);
@@ -55,3 +56,4 @@ apiRouter.use('/insurance-claims', insuranceRouter);
 apiRouter.use('/suppliers', supplierRouter);
 apiRouter.use('/shifts', shiftRouter);
 apiRouter.use('/audit-logs', auditRouter);
+apiRouter.use('/ai', aiRouter);

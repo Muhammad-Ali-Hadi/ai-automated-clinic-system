@@ -4,3 +4,6 @@ dist/
 coverage/
 *.log
 audit_out/
+
+# Local dev-only embedded Postgres data (see tools/local-db.mjs)
+.localdb/
