@@ -1,415 +1,244 @@
-# AI Automated Clinic System
+# 🏥 Renovia Hospital OS
 
-# 🏥 Rizocare Clinic OS
+> **AI-powered, multi-tenant Hospital Management System** — a cloud-ready operating
+> system that connects every hospital department into one workflow.
+>
+> **Version:** 1.0 · **Product type:** SaaS (multi-tenant) · **© Rizomation AI**
 
-> **AI-Powered Hospital Management System**
+This repository is a **monorepo** with three parts:
 
-**Version:** 1.0
-**Product Type:** SaaS (Multi-Tenant)
-**Company:** Rizomation AI
+| Part | Path | Stack |
+|---|---|---|
+| **Backend API + worker** | [`src/`](src/) | Node 20 · TypeScript · Express 5 · Prisma 6 · PostgreSQL · Socket.IO |
+| **AI platform** | [`src/ai/`](src/ai/) | 15 modules · OpenAI · RAG (Qdrant) · conversation memory |
+| **Frontend** | [`frontend/`](frontend/) | React 18 · TypeScript · Vite · Tailwind · TanStack Query |
 
----
-
-# 📖 Product Overview
-
-## Product Name
-
-**Renovia Hospital OS**
-
-## Vision
-
-Renovia Hospital OS is a cloud-based, AI-powered Hospital Management System (HMS) designed to help hospitals digitize operations, automate workflows, and deliver better patient care through intelligent automation.
-
-The platform provides hospitals with a secure, scalable, and modern operating system that connects every department into one unified ecosystem.
+Deeper docs: [`backend.md`](backend.md) (API service) · [`frontend/README.md`](frontend/README.md) (SPA) ·
+[`WORKFLOW.md`](WORKFLOW.md) (end-to-end walkthrough) · [`docs/production-engineering.md`](docs/production-engineering.md).
 
 ---
 
-# 🚨 Problem Statement
+## What's in the box
 
-Many hospitals still face challenges such as:
-
-* Paper-based workflows
-* Disconnected systems
-* Manual appointment scheduling
-* Long patient waiting times
-* Inefficient billing
-* Poor communication
-* Limited reporting
-* Lack of AI-assisted workflows
-* Data duplication
-* High administrative workload
-
----
-
-# 🎯 Goals
-
-## Business Goals
-
-* Build a scalable SaaS platform
-* Reduce operational costs for hospitals
-* Increase staff productivity
-* Improve patient satisfaction
-* Generate recurring subscription revenue
-
-## Product Goals
-
-* Centralize hospital operations
-* Automate repetitive tasks
-* Improve data accessibility
-* Integrate AI into clinical and administrative workflows
-* Enable secure cloud access
+- **~185 REST endpoints** across 25 domains (`/api/v1/**`) — auth & RBAC, hospitals,
+  departments, patients (allergies / chronic / insurance / contacts / vitals / notes /
+  timeline), doctors & availability, appointments & queue, consultations, prescriptions,
+  EHR, laboratory, pharmacy & dispensing, billing (invoices / payments / refunds /
+  insurance claims), staff / HR, inventory & procurement, notifications & templates,
+  reports, files, audit logs.
+- **16 AI endpoints** (`/api/v1/ai/**`) exposing the Rizocare AI modules — clinical chat,
+  AI receptionist, discharge summary, prescription draft, lab interpretation & analysis,
+  patient explainer, billing & pharmacy assistants, document extraction, smart search,
+  operational analytics, knowledge base (RAG), voice transcription.
+- **52 Prisma models** on PostgreSQL, applied via migrations.
+- **A PostgreSQL-backed job worker** (`FOR UPDATE SKIP LOCKED`, bounded retry).
+- **Socket.IO** realtime on the same HTTP server.
+- **24 frontend screens** covering the full clinical + administrative workflow, plus an
+  **AI Assistant** hub.
+- **Zero-Docker local dev**: an embedded PostgreSQL runner (`tools/local-db.mjs`) and an
+  in-process fallback for AI conversation memory, so the whole stack runs with just Node.
 
 ---
 
-# 👥 Target Users
+## Architecture
 
-## 🏥 Hospital Administrator
+```
+Browser (React SPA, :5173)
+   │  same-origin  /api  →  Vite dev proxy
+   ▼
+Express API (:4000) ──────────────► PostgreSQL (:5432, Prisma)
+   │  ├─ middlewares: helmet, CORS allow-list, rate-limit, pino, Zod validate,
+   │  │               JWT authenticate → authorize(roles) → requireTenant
+   │  ├─ controllers (thin)  →  services (business logic)  →  repositories (Prisma)
+   │  ├─ /api/v1/ai/*  →  src/ai gateway (aiService)  →  OpenAI / Qdrant / memory
+   │  └─ Socket.IO (realtime)
+   ▼
+Job worker (npm run worker) ──────► PostgreSQL (BackgroundJob queue)
+```
 
-* Manage hospital settings
-* Monitor operations
-* Manage staff
-* Access reports
-* AI chatbot for quick information retrieval
+**Layered backend** — controllers parse the request and shape the response; **services**
+hold business logic; **repositories** own Prisma. **Multi-tenant**: the JWT is the *only*
+source of `hospitalId`; client-supplied hospital IDs in the URL/body/query are ignored.
+**RBAC roles**: `SUPER_ADMIN`, `HOSPITAL_ADMIN`, `DOCTOR`, `RECEPTIONIST`, `NURSE`,
+`PHARMACIST`, `LABORATORY_TECHNICIAN`, `ACCOUNTANT`, `PATIENT`.
 
----
-
-## 🛠️ Admin
-
-* Register patients
-* Schedule appointments
-* Manage queues
-* Monitor admitted patients
-* Record vitals
-* Manage billing and payments
-* Generate financial reports
-
----
-
-## 👨‍⚕️ Doctor
-
-* View patient records
-* Record consultations
-* Create digital prescriptions
-* Access clinical history
+**Frontend request flow** — one axios client; per-request token attach; **single-flight
+401 refresh** (concurrent 401s share one `/auth/refresh` and replay once); normalized
+`ApiError` with field-level messages; centralized TanStack Query keys; URL-synced
+list state; route-level code splitting.
 
 ---
 
-## 🧑‍🤝‍🧑 Patient
+## Quick start (local, no Docker)
 
-* Book appointments
-* View prescriptions
-* Access reports
-* Make payments
-* Upload medical reports
-* AI chatbot for health and appointment queries
+**Prerequisites:** Node.js ≥ 20. That's it — PostgreSQL runs embedded.
 
----
+### 1. Install
 
-# 🚀 Core Modules
+```bash
+npm install                 # backend
+cd frontend && npm install && cd ..
+```
 
-## 🔐 Authentication & Security
+### 2. Configure
 
-* Secure Login
-* JWT Authentication
-* Multi-Factor Authentication (MFA)
-* Role-Based Access Control (RBAC)
-* Password Recovery
-* Audit Logs
+A root `.env` is used for the backend (see [`.env.example`](.env.example) for every
+variable). For local dev the important ones are `DATABASE_URL` / `DIRECT_URL`
+(point at `postgresql://postgres:postgres@localhost:5432/renovia`), two distinct
+32-char `JWT_*` secrets, and `CORS_ORIGIN` including `http://localhost:5173`.
+Add a real `OPENAI_API_KEY` only if you want the AI features to return live output.
 
----
+### 3. Run — three terminals
 
-## 👤 Patient Management
+```bash
+# Terminal 1 — database (embedded PostgreSQL 17, persists in ./.localdb)
+node tools/local-db.mjs           # wait for "LOCALDB_READY"
 
-* Patient Registration
-* Medical History
-* Allergies
-* Insurance Information
-* Visit Timeline
-* Emergency Contacts
-* Digital Documents
+# Terminal 2 — API + realtime
+npx prisma migrate deploy         # first run only — creates the schema
+npm run dev                       # http://localhost:4000
 
----
+# Terminal 3 — frontend
+cd frontend && npm run dev        # http://localhost:5173
+```
 
-## 📅 Appointment Management
+Optional **Terminal 4** — background jobs: `npm run worker`.
 
-* Appointment Booking
-* Doctor Availability
-* Queue Management
-* Appointment Reminders
-* Rescheduling
-* Appointment Cancellation
+Open **http://localhost:5173**. If you have no data yet, register a hospital from the
+sign-in screen (creates the tenant + its first `HOSPITAL_ADMIN`).
 
----
+| URL | What |
+|---|---|
+| http://localhost:5173 | The web app |
+| http://localhost:4000/api-docs | OpenAPI / Swagger UI |
+| http://localhost:4000/health · `/ready` | Liveness · readiness (real DB check) |
 
-## 👨‍⚕️ Doctor Module
-
-* Consultation Notes
-* Diagnoses
-* Digital Prescriptions
-* Follow-up Scheduling
-* Clinical History
+> **Production / hosted PostgreSQL (Supabase):** skip `tools/local-db.mjs`, point
+> `DATABASE_URL` at the Supabase transaction pooler (`:6543`) and `DIRECT_URL` at the
+> session connection (`:5432`), then `npx prisma migrate deploy`. See
+> [`docs/production-engineering.md`](docs/production-engineering.md).
 
 ---
 
-## 🏥 Electronic Health Records (EHR)
-
-* Medical History
-* Laboratory Reports
-* Radiology Reports
-* Prescriptions
-* Progress Notes
-* Uploaded Documents
-
----
-
-## 💳 Billing
-
-* Invoice Generation
-* Payments
-* Insurance Claims
-* Discounts
-* Refunds
-
----
-
-## 👨‍💼 Staff Management
-
-* Employee Profiles
-* Attendance
-* Leave Requests
-* Shift Scheduling
-
----
-
-## 📊 Reporting
-
-* Revenue Reports
-* Patient Statistics
-* Appointment Analytics
-
----
-
-# 🤖 AI Features
-
-## AI Receptionist
-
-* Book appointments
-* Answer frequently asked questions
-* Provide hospital information
-* Send appointment reminders
-
----
-
-## AI Doctor Assistant
-
-* Generate consultation summaries
-* Draft prescriptions
-* Summarize patient history
-* Generate discharge summaries
-
----
-
-## AI Patient Assistant
-
-* Explain prescriptions
-* Explain laboratory reports
-* Send appointment reminders
-
----
-
-## AI Analytics
-
-* Revenue Forecasting
-* Patient Trend Analysis
-* Peak-Hour Prediction
-* Staff Workload Analysis
-
----
-
-# ⚙️ Functional Requirements
-
-## Authentication
-
-* User Login
-* Logout
-* Password Reset
-* Session Management
-
----
-
-## Patient
-
-* Add / Edit / Delete Patients
-* Search Patients
-* Upload Medical Documents
-
----
-
-## Appointment
-
-* Create Appointment
-* Cancel Appointment
-* Reschedule Appointment
-* Doctor Calendar
-
----
-
-## Billing
-
-* Generate Invoices
-* Accept Payments
-* View Payment History
-
----
-
-## Pharmacy
-
-* Dispense Medicines
-* Inventory Management
-
----
-
-## Reports
-
-* Export PDF
-* Export Excel
-
----
-
-# 🛡️ Non-Functional Requirements
-
-* Responsive Design
-* High Availability
-* Data Encryption
-* Response Time < 2 Seconds
-* Daily Backups
-* Audit Logging
-* Scalable Architecture
-* Cloud Hosting
-* API Documentation
-
----
-
-# 💻 Technology Stack
-
-## Frontend
-
-* React
-* TypeScript
-* Vite
-* Tailwind CSS
-* TanStack Query
-
----
-
-## Backend
-
-* Node.js
-* Express.js
-* MongoDB
-* Socket.IO
-
----
-
-## AI
-
-* Groq
-* Whisper
-* Embeddings
-* Retrieval-Augmented Generation (RAG)
-
----
-
-## Storage
-
-* MongoDB Atlas
-* S3-Compatible Object Storage
-
----
-
-## Deployment
-
-* Render
-* Vercel
-* GitHub Actions
-* Cloud Hosting
-
----
-
-# 🔄 User Flow
-
-```text
-Patient Registration
-        │
-        ▼
-Appointment Booking
-        │
-        ▼
-Doctor Consultation
-        │
-        ▼
-Laboratory (Optional)
-        │
-        ▼
-Prescription
-        │
-        ▼
-Billing
-        │
-        ▼
-Payment
-        │
-        ▼
-Follow-up
+## Project structure
+
+```
+.
+├── src/                      # Backend API + worker
+│   ├── app.ts server.ts      # Express app, HTTP + Socket.IO, graceful shutdown
+│   ├── config/env.ts         # Zod-validated environment
+│   ├── routes/               # route defs + per-route Zod schemas  (incl. ai.routes.ts)
+│   ├── controllers/          # thin HTTP handlers                  (incl. ai.controller.ts)
+│   ├── services/ repositories/
+│   ├── middlewares/          # auth (JWT/RBAC/tenant), validate, error-handler
+│   ├── jobs/worker.ts        # PostgreSQL job worker
+│   ├── docs/openapi.ts       # OpenAPI definition → /api-docs
+│   └── ai/                   # AI platform
+│       ├── index.ts          # barrel — import AI only through `aiService`
+│       ├── services/         # chat, embedding, speech, openai-client
+│       ├── modules/          # 15 specialized modules (receptionist, doctor, …)
+│       ├── rag/ vector/      # RAG pipeline + Qdrant client
+│       ├── memory/           # conversation manager + Redis client (in-process fallback)
+│       ├── guardrails/ evaluations/ prompts/ config/ analytics/
+├── frontend/                 # React + Vite SPA
+│   └── src/
+│       ├── lib/              # apiClient (token + single-flight refresh), queryClient, format
+│       ├── api/              # query keys, mutations, lookups, ai.ts
+│       ├── features/auth/    # AuthProvider, RequireAuth, jwt
+│       ├── components/       # ui kit + layout (sidebar, topbar)
+│       └── pages/            # 24 screens  (+ pages/ai/ AI Assistant panels)
+├── prisma/
+│   ├── schema.prisma         # 52 models
+│   └── migrations/           # 9 migrations
+├── tools/
+│   ├── local-db.mjs          # embedded PostgreSQL for local dev (no Docker)
+│   └── fix-migration.mjs     # one-off recovery helper for a partial migration
+├── docs/production-engineering.md
+├── backend.md  ·  WORKFLOW.md
+└── Dockerfile.ai · docker-compose.ai.yml · k8s/   # AI service container assets
 ```
 
 ---
 
-# 📈 Success Metrics
+## Scripts
 
-* 95% Appointment Scheduling Accuracy
-* Average Response Time < 2 Seconds
-* 99.9% System Uptime
-* Reduced Patient Waiting Time
-* Increased Staff Productivity
-* High Customer Retention
+**Backend (repo root)**
 
----
+| Script | Does |
+|---|---|
+| `npm run dev` | API with reload (`tsx watch src/server.ts`) |
+| `npm run worker` | Background job worker |
+| `npm run build` | `prisma generate && tsc` → `dist/` |
+| `npm start` | `node dist/server.js` |
+| `npm test` · `npm run test:coverage` | Vitest suites |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run prisma:migrate` · `prisma:generate` · `prisma:validate` | Prisma |
 
-# 🛣️ Future Roadmap
+**Frontend (`frontend/`)**
 
-* 📱 Mobile Applications
-* 🩺 Telemedicine
-* 🎙️ AI Voice Receptionist
-* ⌚ Wearable Device Integration
-* 🏥 Insurance Integration
-* 🔗 HL7 / FHIR APIs
-* 🖥️ PACS & DICOM Integration
-* 🌍 Multi-Hospital Management
-* 🎨 White-Label Solution
-* 📊 Advanced Predictive Analytics
-
----
-
-# 🚀 Deliverables
-
-## Phase 1
-
-* Core Hospital Management System
-
-## Phase 2
-
-* AI-Powered Hospital Automation
-
-## Phase 3
-
-* Enterprise Features & Integrations
+| Script | Does |
+|---|---|
+| `npm run dev` | Vite dev server (`:5173`, proxies `/api` → `:4000`) |
+| `npm run build` | `tsc && vite build` → `frontend/dist/` |
+| `npm run preview` | Serve the production build |
+| `npm run typecheck` | `tsc --noEmit` |
 
 ---
 
-# 💡 Value Proposition
+## Technology stack (as built)
 
-Renovia Hospital OS enables hospitals to replace fragmented systems with a unified AI-powered platform that improves operational efficiency, enhances patient experiences, and supports data-driven decision-making while remaining scalable, secure, and ready for future healthcare innovations.
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, TypeScript, Vite 5, Tailwind CSS 3, TanStack Query 5, React Router 6, Recharts, axios |
+| Backend | Node.js 20+, TypeScript, Express 5, Zod, Socket.IO, pino, helmet, JWT (jsonwebtoken), bcryptjs |
+| Database | PostgreSQL via **Prisma 6** (Supabase-compatible; embedded Postgres for local dev) |
+| Jobs | PostgreSQL-backed worker (`FOR UPDATE SKIP LOCKED`) |
+| AI | OpenAI (`gpt-4.1-mini`, `text-embedding-3-small`, `whisper-1`), Qdrant (vector store), Redis *or* in-process conversation memory |
+| Storage | S3-compatible object storage via a dependency-free AWS SigV4 pre-signer |
+| Email | SMTP (Nodemailer), environment-gated |
+| Docs | OpenAPI / Swagger UI |
+| Tests | Vitest (unit, HTTP/runtime, security, worker, storage) |
+
+> **Note:** the earlier product brief mentioned MongoDB / Groq / Socket-only stacks; the
+> implemented system uses **PostgreSQL + Prisma** and **OpenAI**. This section reflects the
+> code in the repo.
+
+---
+
+## AI features
+
+The `src/ai/` platform is reachable at `/api/v1/ai/**` and surfaced in the frontend under
+**AI Assistant**. It requires a real `OPENAI_API_KEY` in the backend `.env` (restart the
+API after adding it — a `.env` change alone does not hot-reload). Conversation memory uses
+Redis if `REDIS_URL` is reachable, otherwise an in-process store. The knowledge base (RAG)
+additionally needs Qdrant on `QDRANT_URL`.
+
+| Group | Capabilities |
+|---|---|
+| Conversational | Clinical assistant (multi-turn memory), AI receptionist, knowledge base (RAG ingest + query), smart search, voice transcription (Whisper) |
+| Doctor | Discharge summary, prescription draft, lab interpretation, lab report analysis |
+| Patient | Plain-language explainer for reports & prescriptions |
+| Operations | Billing assistant, pharmacy assistant, document extraction, operational analytics |
+
+`GET /api/v1/ai/status` reports which providers are configured.
+
+---
+
+## Security
+
+Helmet headers · strict CORS allow-list · global rate limiting · 1 MB JSON body limit
+(25 MB only on `/ai/transcribe`) · Zod validation before business logic · JWT + RBAC +
+tenant isolation on every tenant-scoped query · hashed & rotated refresh tokens with
+reuse detection · bcrypt passwords · structured pino logs with credential/token redaction ·
+no stack traces in API responses · audit log of every mutation.
+
+---
+
+## Roadmap
+
+Mobile apps · telemedicine · AI voice receptionist · wearable integration · insurance
+integration · HL7 / FHIR APIs · PACS & DICOM · multi-hospital management · white-label ·
+advanced predictive analytics.
 
 ---
 

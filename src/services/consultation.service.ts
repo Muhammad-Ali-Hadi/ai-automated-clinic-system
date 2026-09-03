@@ -2,6 +2,8 @@ import { AppError } from '../utils/app-error.js';
 import { auditService, type TenantAuth } from './audit.service.js';
 import { consultationRepository } from '../repositories/consultation.repository.js';
 import { patientRepository } from '../repositories/patient.repository.js';
+import { appointmentRepository } from '../repositories/appointment.repository.js';
+import { prisma } from '../lib/prisma.js';
 
 const hid = (auth: TenantAuth) => {
   if (!auth.hospitalId) throw new AppError('Tenant context required.', 403);
@@ -26,12 +28,35 @@ export const consultationService = {
     const patient = await patientRepository.findById(hospitalId, input.patientId);
     if (!patient) throw new AppError('Patient not found.', 404);
 
+    // If linked to a visit, verify it belongs to this tenant + patient before recording.
+    const appointment = input.appointmentId
+      ? await appointmentRepository.findById(hospitalId, input.appointmentId)
+      : null;
+    if (input.appointmentId && (!appointment || appointment.patientId !== input.patientId)) {
+      throw new AppError('Appointment not found for this patient.', 404);
+    }
+
     const consultation = await consultationRepository.create({
       ...input,
       hospitalId,
       followUpAt: input.followUpAt ? new Date(input.followUpAt) : undefined,
     });
     await auditService.record(auth, 'CREATE', 'Consultation', consultation.id);
+
+    // Recording a consultation for a booked/checked-in visit moves it "in consultation",
+    // so the patient shows in the correct Live Queue lane.
+    if (appointment && ['BOOKED', 'CHECKED_IN'].includes(appointment.status)) {
+      await appointmentRepository.updateStatus(hospitalId, appointment.id, 'IN_PROGRESS');
+      await prisma.queueEntry.updateMany({
+        where: { appointmentId: appointment.id, hospitalId },
+        data: { status: 'IN_PROGRESS' },
+      });
+      await auditService.record(auth, 'UPDATE', 'Appointment', appointment.id, {
+        status: 'IN_PROGRESS',
+        via: 'consultation',
+      });
+    }
+
     return consultation;
   },
 

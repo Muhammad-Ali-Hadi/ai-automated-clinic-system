@@ -20,6 +20,8 @@ const schema = z.object({
   CORS_ORIGIN: z.string().min(1),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(900_000),
+  RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1_000_000).default(1_000),
   SMTP_HOST: optionalText,
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_SECURE: booleanFromEnv.default(false),

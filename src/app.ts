@@ -25,8 +25,23 @@ app.use(pinoHttp({ logger, genReqId: (req, res) => {
 app.use(helmet());
 app.use(cors({ origin: corsOrigins, credentials: true, methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] }));
 app.use(compression());
+// Voice transcription carries base64 audio — allow a larger body on that one path only.
+// Runs before the global 1 MB parser; body-parser skips the second parse once req._body is set.
+app.use('/api/v1/ai/transcribe', express.json({ limit: '25mb', type: ['application/json', 'application/*+json'] }));
 app.use(express.json({ limit: '1mb', type: ['application/json', 'application/*+json'] }));
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: 'draft-8', legacyHeaders: false }));
+// Global rate limit. Window/max are env-tunable (RATE_LIMIT_WINDOW_MS / RATE_LIMIT_MAX);
+// disabled entirely in development so a normal SPA session never trips it. A single SPA
+// screen can fire several requests, so the default max is generous — tighten it in prod.
+app.use(
+  rateLimit({
+    windowMs: env.RATE_LIMIT_WINDOW_MS,
+    limit: env.RATE_LIMIT_MAX,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skip: (req) => env.NODE_ENV === 'development' || req.path === '/health' || req.path === '/ready',
+    message: { success: false, message: 'Too many requests. Please slow down and try again shortly.', errors: [], statusCode: 429 },
+  }),
+);
 app.get('/health', (_req, res) => res.json({ success: true, message: 'Healthy', data: { status: 'ok' } }));
 app.get('/ready', async (_req, res) => {
   try { await prisma.$queryRaw`SELECT 1`; res.json({ success: true, message: 'Ready', data: { status: 'ready', database: 'ok' } }); }
