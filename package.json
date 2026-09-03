@@ -35,7 +35,10 @@
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^11.1.0",
-    "zod": "^3.24.3"
+    "zod": "^3.24.3",
+    "openai": "^4.98.0",
+    "@qdrant/js-client-rest": "^1.13.0",
+    "redis": "^4.7.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
