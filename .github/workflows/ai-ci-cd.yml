@@ -10,6 +10,14 @@ jobs:
   validate-and-test:
     name: 1. Code Quality, Type Safety & Test Suite
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:password@db.example.com:5432/postgres
+      DIRECT_URL: postgresql://postgres:password@db.example.com:5432/postgres
+      JWT_ACCESS_SECRET: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      JWT_REFRESH_SECRET: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      CORS_ORIGIN: http://localhost:3000
+      OPENAI_API_KEY: sk-test-0000000000000000000000000000000000000000
     steps:
       - uses: actions/checkout@v4
 
