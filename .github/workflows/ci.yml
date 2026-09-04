@@ -21,6 +21,7 @@ jobs:
       S3_BUCKET: test-bucket
       AWS_ACCESS_KEY_ID: test-access-key
       AWS_SECRET_ACCESS_KEY: test-secret-key
+      OPENAI_API_KEY: sk-test-0000000000000000000000000000000000000000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
