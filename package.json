@@ -17,6 +17,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "deepmerge-ts": "8.0.2"
+  },
   "dependencies": {
     "@prisma/client": "^6.5.0",
     "@qdrant/js-client-rest": "^1.13.0",
