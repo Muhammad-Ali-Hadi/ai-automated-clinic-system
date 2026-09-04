@@ -29,13 +29,13 @@ jobs:
         run: npx tsc --noEmit
 
       - name: 3. Run Unit Tests
-        run: node --test src/ai/tests/guardrails.test.ts
+        run: npx tsx --test src/ai/tests/guardrails.test.ts
 
       - name: 4. Run Integration Tests
-        run: node --test src/ai/tests/prompt-regression.test.ts
+        run: npx tsx --test src/ai/tests/prompt-regression.test.ts
 
       - name: 5. Run Prompt Regression Tests
-        run: node --test src/ai/tests/prompt-regression.test.ts
+        run: npx tsx --test src/ai/tests/prompt-regression.test.ts
 
       - name: 6. Validate Prompt Templates
         run: node -e "import('./dist/ai/prompts/prompt-registry.js').then(m => console.log('Prompts valid:', m.listPrompts().length))" || true
