@@ -6,7 +6,9 @@ import { toApiError } from './apiError';
  * The one HTTP client for the app.
  *
  * System-design properties:
- *  - Same-origin: talks to `/api/v1`, which Vite proxies to the backend in dev.
+ *  - Base URL: `VITE_API_BASE_URL` in production (the deployed backend origin, e.g.
+ *    `https://renovia-api.onrender.com`); in dev it's empty and calls hit `/api/v1`,
+ *    which the Vite dev server proxies to the backend.
  *  - Auth: attaches the current access token per request (read fresh, not captured).
  *  - Refresh: on a 401 it performs a single-flight token refresh and replays the
  *    queued requests once — concurrent 401s share one refresh call.
@@ -14,7 +16,9 @@ import { toApiError } from './apiError';
  *  - Errors: every rejection is normalized to `ApiError` for the UI/react-query.
  */
 
-export const API_BASE = '/api/v1';
+// e.g. "https://renovia-api.onrender.com" (no trailing slash, no /api/v1). Empty in dev.
+const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+export const API_BASE = `${API_ORIGIN}/api/v1`;
 
 export const api = axios.create({
   baseURL: API_BASE,

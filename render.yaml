@@ -1,0 +1,113 @@
+# Render Blueprint — deploys the Renovia backend: PostgreSQL + API web service + job worker.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# After the first sync you MUST:
+#   1. Set CORS_ORIGIN (in the "renovia-shared" env group) to your Vercel URL.
+#   2. Either fill in SMTP_* (email + password-reset actually work) OR set NODE_ENV=development
+#      in the group — with NODE_ENV=production the API refuses to boot without SMTP.
+#   3. Optionally set OPENAI_API_KEY to enable the AI Assistant.
+
+databases:
+  - name: renovia-db
+    databaseName: renovia
+    plan: free            # free Postgres is deleted after 30 days — upgrade for anything real
+    region: oregon
+
+envVarGroups:
+  - name: renovia-shared
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 30d
+      - key: CORS_ORIGIN
+        value: https://CHANGE-ME.vercel.app   # <-- your Vercel production URL (comma-separated for more)
+      - key: TRUST_PROXY_HOPS
+        value: "1"                             # Render terminates TLS at its proxy
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX
+        value: "2000"
+      - key: LOG_LEVEL
+        value: info
+      # SMTP — required when NODE_ENV=production. Use a free relay (Brevo / Resend / Mailtrap)
+      # or a Gmail App Password. Leave blank + set NODE_ENV=development to skip email.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        value: Renovia Hospital OS <no-reply@renovia.app>
+      # AI Assistant (optional). Blank = AI endpoints return a clear "not configured" error.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_DEFAULT_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: OPENAI_WHISPER_MODEL
+        value: whisper-1
+      # RAG needs a reachable Qdrant; conversation memory falls back to in-process if Redis is absent.
+      - key: QDRANT_URL
+        value: http://localhost:6333
+      - key: REDIS_URL
+        value: redis://localhost:6379
+
+services:
+  # ── API + realtime ──────────────────────────────────────────────
+  - type: web
+    name: renovia-api
+    runtime: node
+    plan: free            # free web services sleep after 15 min idle (~50s cold start)
+    region: oregon
+    branch: main
+    buildCommand: npm install && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - fromGroup: renovia-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: renovia-db
+          property: connectionString
+      - key: DIRECT_URL
+        fromDatabase:
+          name: renovia-db
+          property: connectionString
+
+  # ── Background job worker (notifications, exports) ──────────────
+  # NOTE: Render background workers are NOT on the free tier (needs a paid instance).
+  # If you don't want to pay, delete this whole block — the app runs fine without it;
+  # queued notifications/exports just won't be delivered until a worker runs.
+  - type: worker
+    name: renovia-worker
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm install && npm run build
+    startCommand: node dist/jobs/worker.js
+    autoDeploy: true
+    envVars:
+      - fromGroup: renovia-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: renovia-db
+          property: connectionString
+      - key: DIRECT_URL
+        fromDatabase:
+          name: renovia-db
+          property: connectionString
