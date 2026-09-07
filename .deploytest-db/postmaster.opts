@@ -1,0 +1,1 @@
+C:/Users/aquar/ai-automated-clinic-system/node_modules/@embedded-postgres/windows-x64/native/bin/postgres.exe "-D" "C:/Users/aquar/ai-automated-clinic-system/.deploytest-db" "-p" "5599"
