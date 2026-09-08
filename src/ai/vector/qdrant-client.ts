@@ -21,9 +21,9 @@ export function getQdrantClient(): QdrantClient {
   return _client;
 }
 
-/** Standard vector size for text-embedding-3-small (1536) and text-embedding-3-large (3072). */
-export const VECTOR_SIZE_SMALL = 1_536;
-export const VECTOR_SIZE_LARGE = 3_072;
+/** Standard vector size for Gemini text-embedding-004 (768). OpenAI sizes kept as reference: small=1536, large=3072. */
+export const VECTOR_SIZE_SMALL = 768;   // Gemini text-embedding-004
+export const VECTOR_SIZE_LARGE = 3_072; // OpenAI text-embedding-3-large (unused)
 
 /**
  * Ensures a named collection exists in Qdrant.

@@ -26,7 +26,7 @@ export class ChatService {
     messages: ChatMessage[],
     options: CompletionOptions = {}
   ): Promise<CompletionResult> {
-    const model = (options.model ?? aiEnv.OPENAI_DEFAULT_MODEL) as AIModel;
+    const model = (options.model ?? aiEnv.GROQ_DEFAULT_MODEL) as AIModel;
     const temperature = options.temperature ?? aiEnv.AI_TEMPERATURE;
     const maxTokens = options.maxTokens ?? aiEnv.AI_MAX_TOKENS;
 
@@ -48,7 +48,7 @@ export class ChatService {
     options: CompletionOptions = {}
   ): AsyncGenerator<string> {
     const client = getOpenAIClient();
-    const model = (options.model ?? aiEnv.OPENAI_DEFAULT_MODEL) as string;
+    const model = (options.model ?? aiEnv.GROQ_DEFAULT_MODEL) as string;
 
     const stream = await client.chat.completions.create({
       model,
@@ -95,7 +95,7 @@ export class ChatService {
       return {
         content: choice.message.content,
         model: response.model,
-        provider: 'openai',
+        provider: 'groq',
         latencyMs: Date.now() - startMs,
         usage: {
           promptTokens: response.usage?.prompt_tokens ?? 0,
@@ -105,7 +105,7 @@ export class ChatService {
       };
     } catch (error) {
       if (error instanceof AIError) throw error;
-      this._mapOpenAIError(error, 'openai');
+      this._mapOpenAIError(error, 'groq');
       throw error; // unreachable but satisfies TS
     }
   }

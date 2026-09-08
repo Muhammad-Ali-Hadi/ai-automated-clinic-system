@@ -5,9 +5,11 @@
 
 // ─── Provider ───────────────────────────────────────────────────────────────
 
-export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'azure-openai';
+export type AIProvider = 'openai' | 'groq' | 'gemini' | 'anthropic' | 'azure-openai';
 
 export type AIModel =
+  | 'llama-3.3-70b-versatile'
+  | 'llama-3.1-8b-instant'
   | 'gpt-4.1'
   | 'gpt-4.1-mini'
   | 'gpt-4o'

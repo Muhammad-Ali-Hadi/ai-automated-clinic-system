@@ -1,7 +1,8 @@
 /**
  * @module ai/config/ai-env
  * @description AI-specific environment variable schema and validation.
- * Extends the base env config with AI provider credentials and tuning params.
+ * Chat completions + Whisper → Groq (free tier, OpenAI-compatible).
+ * Embeddings → Google Gemini free tier (text-embedding-004, 768 dims).
  */
 
 import { z } from 'zod';
@@ -13,17 +14,23 @@ const optionalText = z.preprocess(
 );
 
 const aiEnvSchema = z.object({
-  // ── OpenAI ──────────────────────────────────────────────────────────────────
-  OPENAI_API_KEY: z.string().min(1),
-  OPENAI_DEFAULT_MODEL: z.string().min(1).default('gpt-4.1-mini'),
-  OPENAI_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
-  OPENAI_WHISPER_MODEL: z.string().min(1).default('whisper-1'),
+  // ── Groq (chat completions + Whisper speech-to-text) ────────────────────────
+  GROQ_API_KEY: z.string().min(1),
+  GROQ_DEFAULT_MODEL: z.string().min(1).default('llama-3.3-70b-versatile'),
+  GROQ_WHISPER_MODEL: z.string().min(1).default('whisper-large-v3-turbo'),
+
+  // ── Google Gemini (embeddings — text-embedding-004, 768 dims) ────────────────
+  GEMINI_API_KEY: z.string().min(1),
+  GEMINI_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-004'),
+
+  // ── Legacy OpenAI keys (kept optional so old .env files don't break) ────────
+  OPENAI_API_KEY: optionalText,
+  OPENAI_DEFAULT_MODEL: optionalText,
+  OPENAI_EMBEDDING_MODEL: optionalText,
+  OPENAI_WHISPER_MODEL: optionalText,
 
   // ── Anthropic (optional future provider) ─────────────────────────────────
   ANTHROPIC_API_KEY: optionalText,
-
-  // ── Google Gemini (optional future provider) ──────────────────────────────
-  GEMINI_API_KEY: optionalText,
 
   // ── Azure OpenAI (optional future provider) ───────────────────────────────
   AZURE_OPENAI_API_KEY: optionalText,

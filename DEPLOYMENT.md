@@ -59,7 +59,7 @@ Render Dashboard → **Env Groups** → **renovia-shared** → edit:
 |---|---|---|
 | `CORS_ORIGIN` | *(placeholder for now)* — your Vercel URL after Part B, e.g. `https://renovia.vercel.app` | Comma-separate for multiple origins. |
 | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` | credentials from a free relay (Brevo, Resend SMTP, Mailtrap) or a Gmail **App Password** | **Required while `NODE_ENV=production`.** Enables login email + password reset. |
-| `OPENAI_API_KEY` | your OpenAI key | Optional. Blank ⇒ the AI Assistant returns a clear "not configured" error. |
+| `GROQ_API_KEY`, `GEMINI_API_KEY` | your Groq key (console.groq.com) & Gemini key (aistudio.google.com) | Optional. Free tier AI services. Blank ⇒ AI endpoints return a clear "not configured" error. |
 
 **Don't want to set up email?** In the same group set `NODE_ENV` = `development`. The API then boots without SMTP (password-reset emails just won't send, and the global rate-limiter is disabled).
 

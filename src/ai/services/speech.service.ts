@@ -29,7 +29,7 @@ export class SpeechService {
   private readonly model: string;
 
   constructor(model?: string) {
-    this.model = model ?? aiEnv.OPENAI_WHISPER_MODEL;
+    this.model = model ?? aiEnv.GROQ_WHISPER_MODEL;
   }
 
   /**
@@ -87,7 +87,7 @@ export class SpeechService {
         };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        throw new AIError(msg, 'TRANSCRIPTION_FAILED', { provider: 'openai', retryable: true });
+        throw new AIError(msg, 'TRANSCRIPTION_FAILED', { provider: 'groq', retryable: true });
       }
     });
   }

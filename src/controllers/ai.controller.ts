@@ -59,10 +59,10 @@ interface AiBody {
   language: string;
 }
 
-/** Does the configured OpenAI key look like a real one (vs. the repo placeholder)? */
-const openAiConfigured = (): boolean => {
-  const k = aiEnv.OPENAI_API_KEY ?? '';
-  return k.startsWith('sk-') && k.length > 24 && !/placeholder|replace|changeme/i.test(k);
+/** Does the configured Groq key look like a real one (vs. the repo placeholder)? */
+const groqConfigured = (): boolean => {
+  const k = aiEnv.GROQ_API_KEY ?? '';
+  return k.startsWith('gsk_') && k.length > 24;
 };
 
 /** Normalise any failure from the AI layer into a clean HTTP error. */
@@ -76,7 +76,7 @@ async function runAI<T>(fn: () => Promise<T>): Promise<T> {
 
     if (status === 401 || code === 'invalid_api_key' || /api key|apikey|unauthor/i.test(message)) {
       throw new AppError(
-        'The AI provider rejected the request. Set a valid OPENAI_API_KEY in the server environment.',
+        'The AI provider rejected the request. Set a valid GROQ_API_KEY in the server environment.',
         502,
       );
     }
@@ -102,11 +102,17 @@ export const aiStatus: RequestHandler = async (_req, res) =>
   ok(
     res,
     {
-      openai: {
-        configured: openAiConfigured(),
-        chatModel: aiEnv.OPENAI_DEFAULT_MODEL,
-        embeddingModel: aiEnv.OPENAI_EMBEDDING_MODEL,
-        whisperModel: aiEnv.OPENAI_WHISPER_MODEL,
+      providers: {
+        chat: {
+          provider: 'groq',
+          configured: groqConfigured(),
+          model: aiEnv.GROQ_DEFAULT_MODEL,
+          whisperModel: aiEnv.GROQ_WHISPER_MODEL,
+        },
+        embeddings: {
+          provider: 'gemini',
+          model: aiEnv.GEMINI_EMBEDDING_MODEL,
+        },
       },
       memory: { mode: getRedisMode() },
       vectorStore: { url: aiEnv.QDRANT_URL, collection: aiEnv.QDRANT_DEFAULT_COLLECTION },

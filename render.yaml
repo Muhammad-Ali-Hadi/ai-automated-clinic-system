@@ -50,15 +50,17 @@ envVarGroups:
         sync: false
       - key: SMTP_FROM
         value: Renovia Hospital OS <no-reply@renovia.app>
-      # AI Assistant (optional). Blank = AI endpoints return a clear "not configured" error.
-      - key: OPENAI_API_KEY
+      # AI Assistant (optional). Free-tier: Groq (chat/speech) + Gemini (embeddings).
+      - key: GROQ_API_KEY
         sync: false
-      - key: OPENAI_DEFAULT_MODEL
-        value: gpt-4.1-mini
-      - key: OPENAI_EMBEDDING_MODEL
-        value: text-embedding-3-small
-      - key: OPENAI_WHISPER_MODEL
-        value: whisper-1
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_DEFAULT_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_WHISPER_MODEL
+        value: whisper-large-v3-turbo
+      - key: GEMINI_EMBEDDING_MODEL
+        value: text-embedding-004
       # RAG needs a reachable Qdrant; conversation memory falls back to in-process if Redis is absent.
       - key: QDRANT_URL
         value: http://localhost:6333

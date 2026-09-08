@@ -8,6 +8,27 @@ import type { ModelConfig, AIModel } from '../types/ai.types.js';
 
 /** All models known to the platform. */
 export const MODEL_REGISTRY: Record<AIModel, ModelConfig> = {
+  // ── Groq (active — free tier) ─────────────────────────────────────────────
+  'llama-3.3-70b-versatile': {
+    id: 'llama-3.3-70b-versatile',
+    provider: 'groq',
+    contextWindow: 128_000,
+    costPerMillionPromptTokens: 0,
+    costPerMillionCompletionTokens: 0,
+    supportsJsonMode: true,
+    supportsStreaming: true,
+  },
+  'llama-3.1-8b-instant': {
+    id: 'llama-3.1-8b-instant',
+    provider: 'groq',
+    contextWindow: 128_000,
+    costPerMillionPromptTokens: 0,
+    costPerMillionCompletionTokens: 0,
+    supportsJsonMode: true,
+    supportsStreaming: true,
+    isFallback: true,
+  },
+  // ── OpenAI (kept for future paid upgrade — not active) ────────────────────
   'gpt-4.1': {
     id: 'gpt-4.1',
     provider: 'openai',
