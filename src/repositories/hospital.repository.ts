@@ -63,7 +63,7 @@ export const hospitalRepository = {
     branchId: string,
     hours: { weekday: number; opensAt: string; closesAt: string; isClosed?: boolean }[]
   ) =>
-    prisma.$transaction(async (tx) => {
+    prisma.$transaction(async (tx: any) => {
       await tx.workingHour.deleteMany({ where: { branchId } });
       await tx.workingHour.createMany({ data: hours.map((hour) => ({ branchId, ...hour })) });
       return tx.workingHour.findMany({ where: { branchId }, orderBy: { weekday: 'asc' } });

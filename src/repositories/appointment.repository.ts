@@ -49,11 +49,11 @@ export const appointmentRepository = {
         hospitalId,
         ...(filters.from || filters.to
           ? {
-              scheduledAt: {
-                ...(filters.from ? { gte: filters.from } : {}),
-                ...(filters.to ? { lte: filters.to } : {}),
-              },
-            }
+            scheduledAt: {
+              ...(filters.from ? { gte: filters.from } : {}),
+              ...(filters.to ? { lte: filters.to } : {}),
+            },
+          }
           : {}),
         ...(filters.doctorId ? { doctorId: filters.doctorId } : {}),
         ...(filters.patientId ? { patientId: filters.patientId } : {}),
@@ -93,11 +93,11 @@ export const appointmentRepository = {
         hospitalId,
         ...(filters.from || filters.to
           ? {
-              scheduledAt: {
-                ...(filters.from ? { gte: filters.from } : {}),
-                ...(filters.to ? { lte: filters.to } : {}),
-              },
-            }
+            scheduledAt: {
+              ...(filters.from ? { gte: filters.from } : {}),
+              ...(filters.to ? { lte: filters.to } : {}),
+            },
+          }
           : {}),
         ...(filters.doctorId ? { doctorId: filters.doctorId } : {}),
         ...(filters.patientId ? { patientId: filters.patientId } : {}),

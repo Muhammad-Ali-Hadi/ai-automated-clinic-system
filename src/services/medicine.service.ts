@@ -105,7 +105,7 @@ export const medicineService = {
     });
     if (!medicine) throw new AppError(`Medicine ${prescription.medicineName} is not available in inventory.`, 404);
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const deducted = await tx.medicine.updateMany({
         where: { id: medicine.id, hospitalId, quantity: { gt: 0 } },
         data: { quantity: { decrement: 1 } },

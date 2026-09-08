@@ -21,6 +21,8 @@ jobs:
       S3_BUCKET: test-bucket
       AWS_ACCESS_KEY_ID: test-access-key
       AWS_SECRET_ACCESS_KEY: test-secret-key
+      GROQ_API_KEY: gsk_test00000000000000000000000000000000000000000000
+      GEMINI_API_KEY: AIzaSy_test0000000000000000000000000000000
       OPENAI_API_KEY: sk-test-0000000000000000000000000000000000000000
     steps:
       - uses: actions/checkout@v4

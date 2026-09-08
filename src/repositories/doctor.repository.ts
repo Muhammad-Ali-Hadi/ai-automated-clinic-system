@@ -71,19 +71,19 @@ export const doctorRepository = {
         ...(specialization ? { specialization: { contains: specialization, mode: 'insensitive' } } : {}),
         ...(search
           ? {
-              OR: [
-                { specialization: { contains: search, mode: 'insensitive' } },
-                { licenseNumber: { contains: search, mode: 'insensitive' } },
-                {
-                  user: {
-                    OR: [
-                      { firstName: { contains: search, mode: 'insensitive' } },
-                      { lastName: { contains: search, mode: 'insensitive' } },
-                    ],
-                  },
+            OR: [
+              { specialization: { contains: search, mode: 'insensitive' } },
+              { licenseNumber: { contains: search, mode: 'insensitive' } },
+              {
+                user: {
+                  OR: [
+                    { firstName: { contains: search, mode: 'insensitive' } },
+                    { lastName: { contains: search, mode: 'insensitive' } },
+                  ],
                 },
-              ],
-            }
+              },
+            ],
+          }
           : {}),
       },
       skip,
@@ -101,19 +101,19 @@ export const doctorRepository = {
         ...(specialization ? { specialization: { contains: specialization, mode: 'insensitive' } } : {}),
         ...(search
           ? {
-              OR: [
-                { specialization: { contains: search, mode: 'insensitive' } },
-                { licenseNumber: { contains: search, mode: 'insensitive' } },
-                {
-                  user: {
-                    OR: [
-                      { firstName: { contains: search, mode: 'insensitive' } },
-                      { lastName: { contains: search, mode: 'insensitive' } },
-                    ],
-                  },
+            OR: [
+              { specialization: { contains: search, mode: 'insensitive' } },
+              { licenseNumber: { contains: search, mode: 'insensitive' } },
+              {
+                user: {
+                  OR: [
+                    { firstName: { contains: search, mode: 'insensitive' } },
+                    { lastName: { contains: search, mode: 'insensitive' } },
+                  ],
                 },
-              ],
-            }
+              },
+            ],
+          }
           : {}),
       },
     }),
